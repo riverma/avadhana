@@ -118,6 +118,14 @@ struct Config: Codable, Equatable {
     var order: [String]
     /// Customized shortcuts, keyed by `ShortcutAction.rawValue`. Missing entries use the defaults.
     var shortcuts: [String: ShortcutSetting]
+    /// While Avadhāna is on, web links from your apps, and links you click in your sites, open
+    /// in the chosen web browser with no address bar.
+    var openLinks: Bool
+    /// Bundle ID of the browser that opens web links while Avadhāna is off, when Avadhāna receives
+    /// your web links. Nil means Safari.
+    var everydayBrowser: String?
+    /// Looks for a new release on GitHub. Shown only in Settings.
+    var checkForUpdates: Bool
 
     func shortcut(_ action: ShortcutAction) -> ShortcutSetting {
         shortcuts[action.rawValue] ?? action.defaultSetting
@@ -196,7 +204,8 @@ struct Config: Codable, Equatable {
     /// First run starts empty: you choose every app and site yourself.
     static var defaults: Config {
         Config(layout: .grid, hideDockDuringSession: true, browser: .safari,
-               apps: [], sites: [], order: [], shortcuts: [:])
+               apps: [], sites: [], order: [], shortcuts: [:],
+               openLinks: true, everydayBrowser: nil, checkForUpdates: true)
     }
 }
 
@@ -211,6 +220,9 @@ extension Config {
         order = try c.decodeIfPresent([String].self, forKey: .order) ?? []
         let saved = (try? c.decodeIfPresent([String: ShortcutSetting].self, forKey: .shortcuts)) ?? [:]
         shortcuts = saved.filter { ShortcutAction(rawValue: $0.key) != nil }   // drop retired shortcuts
+        openLinks = try c.decodeIfPresent(Bool.self, forKey: .openLinks) ?? true
+        everydayBrowser = try c.decodeIfPresent(String.self, forKey: .everydayBrowser)
+        checkForUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkForUpdates) ?? true
     }
 }
 

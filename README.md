@@ -25,11 +25,14 @@
 
 * **Only what you choose.** While Avadhāna is on, apps that aren't on your list are closed when opened (from the Dock, Spotlight or a link), and apps that were already open are hidden, never quit.
 * **One thing at a time.** Each app or site fills the screen. The Dock and menu bar step aside, and a bar at the bottom offers Home, Back and Exit.
-* **Websites without the detours.** Sites open with no address bar or tabs in Safari (WebKit), Firefox or Chrome, using a profile separate from your normal browser. With Safari, links outside a site's allowed domains don't open.
+* **Websites without the detours.** Sites open with no address bar or tabs in Safari (WebKit), Firefox or Chrome, using a profile separate from your normal browser. With Safari, a site stays within its allowed domains.
+* **Web links, one page at a time.** Links from your apps, and links you click in your sites, open on their own in your chosen browser with no address bar, and stay on that page's site. Links from Spotlight or apps you haven't added stay closed. To receive links from apps, Avadhāna becomes your default browser and passes links to your everyday browser while it's off.
+* **Spotlight works too.** Open any app on your list from Spotlight instead of going back to the home screen; anything else is closed with a message.
 * **Keyboard friendly.** Type to search; arrow keys, Page Up/Down, Home and End to move; Return to open. Home (⌘Esc) and Back (⌃⌘⌫) work in every app and can be changed or turned off.
 * **Grid or rows**, arranged by dragging or from a tile's right-click menu.
 * **Exit any time.** Logging out, restarting or shutting down is never blocked.
-* **Private.** No accounts, analytics or network features of its own.
+* **Updates in Settings.** Settings → General shows when a new release is available, and installs it with one click after checking it's signed by the same developer. No pop-ups.
+* **Private.** No accounts or analytics. The only request Avadhāna makes is the optional check for new releases on GitHub.
 
 ## Contents
 
@@ -67,6 +70,8 @@ This guide provides a quick way to get started with Avadhāna. See the [website]
 
 * **Writing session:** add your editor and a reference site such as MDN; open each from the home screen and switch with Home (⌘Esc).
 * **Staying on one website:** add a site with Safari as the browser and list its allowed domains (for example `github.com, githubusercontent.com`). Links elsewhere won't open.
+* **Links from your apps:** in Settings → General, turn on **Receive links from other apps**. While Avadhāna is on, a link in Mail or Slack (if you've added them) opens full screen; Back returns to the app.
+* **Starting from a script:** `open -a Avadhana --args --start` opens Avadhāna and starts right away.
 * **Your own keys:** Settings → Shortcuts lists every shortcut. Record new keys, turn any off, or set Home/Back to "Ignore while typing" to keep keys like ⌘⌫ working in text fields.
 
 Settings are stored in `~/Library/Application Support/Avadhana/config.json`, which you can also edit by hand (changes are picked up when Avadhāna starts).
@@ -91,18 +96,22 @@ The website lives in `docs/` and is served by GitHub Pages at [avadhana.riverma.
 
 ### Test Instructions
 
-1. Run the unit tests (site address validation, allowed domains, settings loading, tile order, shortcut matching):
+1. Run the unit tests (site addresses, allowed domains, link rules, settings, tile order, shortcuts, update checks):
    ```sh
    swift test
    ```
-   They also run on every push and pull request via GitHub Actions.
+   They also run on every push and pull request via GitHub Actions. To also install real updates from disk images end to end, point the tests at a signed build:
+   ```sh
+   ./build.sh && AVADHANA_TEST_APP=build/Avadhana.app swift test
+   ```
 2. Check the parts that depend on macOS itself by hand:
 
    1. Run `./build.sh` and open `build/Avadhana.app`; Settings → General shows the version and the git commit it was built from.
    2. Add an app and a site, then click **Start Avadhāna**. Open each tile; it should fill the screen above the bottom bar.
-   3. Open an app that isn't on your list from Spotlight; it should close and a message should explain why.
-   4. Press ⌘Esc and ⌃⌘⌫ inside another app; they should go Home and Back.
-   5. Click **Exit Avadhāna** and choose **Exit**; the Dock and previously open apps should come back.
+   3. Open an app on your list from Spotlight; it should fill the screen. Open one that isn't; it should close and a message should explain why.
+   4. With **Receive links from other apps** on, click a link in an app on your list; it should open full screen, and Back should return to the app.
+   5. Press ⌘Esc and ⌃⌘⌫ inside another app; they should go Home and Back.
+   6. Click **Exit Avadhāna** and choose **Exit**; the Dock and previously open apps should come back.
 
 ## Changelog
 
@@ -114,12 +123,16 @@ See our [releases page](https://github.com/riverma/avadhana/releases) for our ke
 
 1. Why does Avadhāna need Accessibility access?
    - macOS only lets an app resize other apps' windows with this permission. Avadhāna doesn't record what you type or what's on screen, and sends nothing anywhere.
-2. Will it change my browser or my Mac's settings?
+2. Why would Avadhāna be my default web browser?
+   - It's optional (Settings → General → **Receive links from other apps**), and only needed to open links from your apps while Avadhāna is on. While Avadhāna is off, every link goes straight to the browser you used before. Turning the setting off gives links back to that browser.
+3. Will it change my browser or my Mac's settings?
    - Sites open in a separate browser profile, so your normal browser settings, bookmarks and history aren't touched. The Dock is hidden while Avadhāna is on; its original settings are saved first and restored when you exit, or on the next launch if the app quits unexpectedly.
-3. Is it on the Mac App Store?
+4. Is it on the Mac App Store?
    - No. App Store apps must be sandboxed, and the sandbox doesn't allow managing other apps' windows. Releases are signed with a Developer ID and notarized by Apple.
-4. What are the current limitations?
-   - Avadhāna manages the main display; other displays stay usable. Allowed domains are enforced when sites open in Safari; in Firefox and Chrome, links can lead to other sites.
+5. What are the current limitations?
+   - Avadhāna manages the main display; other displays stay usable. Allowed domains, and keeping links on their own site, are enforced when sites open in Safari; in Firefox and Chrome, links can lead to other sites.
+6. How do updates work?
+   - Settings → General checks GitHub for a newer release (you can turn this off). Click **Update** to download it, check its signature, replace the app and reopen it. Updating waits until Avadhāna is off.
 
 ## Contributing
 

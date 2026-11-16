@@ -10,6 +10,8 @@ protocol SiteBrowser: AnyObject {
     var externalBundleID: String? { get }
     func prepare() throws
     func open(_ tile: SiteTile, completion: @escaping (String?) -> Void)
+    /// Opens a web link (from one of your apps or sites) on its own, without an address bar.
+    func openLink(_ url: URL, completion: @escaping (String?) -> Void)
     /// True for processes belonging to the dedicated focus instance (not the user's normal browser).
     func isFocusProcess(_ app: NSRunningApplication) -> Bool
     /// Browser "back" in the frontmost external window.
@@ -92,6 +94,10 @@ final class ExternalBrowser: SiteBrowser {
             run(URL(fileURLWithPath: "/usr/bin/open"), ["-n", "-a", appURL.path, "--args"] + args(for: url))
             waitForNewWindow(tile: tile, before: [], completion: completion)
         }
+    }
+
+    func openLink(_ url: URL, completion: @escaping (String?) -> Void) {
+        open(.link(to: url), completion: completion)
     }
 
     func goBack(in app: NSRunningApplication) {
@@ -201,6 +207,8 @@ final class WebKitBrowser: SiteBrowser {
     var externalBundleID: String? { nil }
     weak var controller: AppController?
     private var windows: [String: WebWindow] = [:]
+    /// The page opened from the latest link. Each new link replaces it.
+    private var linkWindow: WebWindow?
 
     init(controller: AppController) {
         self.controller = controller
@@ -217,16 +225,36 @@ final class WebKitBrowser: SiteBrowser {
             completion(nil)
             return
         }
-        let chromeless = c.inSession
-        let frame = chromeless ? c.windows.cocoaTargetFrame() : Self.previewFrame()
-        let w = WebWindow(tile: tile, url: url, frame: frame, chromeless: chromeless)
+        let w = makeWindow(tile: tile, url: url, isLink: false, controller: c)
         w.onClose = { [weak self] in self?.windows[tile.id] = nil }
-        w.onBlockedNavigation = { [weak c] host in
-            c?.showToast("\(host) isn't one of \(tile.name)'s allowed sites")
-        }
         windows[tile.id] = w
         show(w)
         completion(nil)
+    }
+
+    func openLink(_ url: URL, completion: @escaping (String?) -> Void) {
+        guard let c = controller else { completion("The link couldn't be opened"); return }
+        linkWindow?.close()
+        let w = makeWindow(tile: .link(to: url), url: url, isLink: true, controller: c)
+        w.onClose = { [weak self, weak w] in
+            if let self, self.linkWindow === w { self.linkWindow = nil }
+        }
+        linkWindow = w
+        show(w)
+        completion(nil)
+    }
+
+    private func makeWindow(tile: SiteTile, url: URL, isLink: Bool, controller c: AppController) -> WebWindow {
+        let chromeless = c.inSession
+        let frame = chromeless ? c.windows.cocoaTargetFrame() : Self.previewFrame()
+        let w = WebWindow(tile: tile, url: url, frame: frame, chromeless: chromeless, isLink: isLink)
+        w.openLinks = { [weak c] in c?.config.openLinks ?? false }
+        w.onBlockedNavigation = { [weak c] message in c?.showToast(message) }
+        w.onOpenLink = { [weak c, weak w] link in c?.openLink(link, fromWindow: w) }
+        w.onSiteChanged = { [weak c, weak w] in
+            if let c, let w, c.inSession, NSApp.keyWindow === w { c.currentAppName = w.tile.name }
+        }
+        return w
     }
 
     private func show(_ w: WebWindow) {
@@ -237,14 +265,15 @@ final class WebKitBrowser: SiteBrowser {
 
     /// Keeps session windows filling the screen above the Home bar.
     func relayout(to frame: NSRect) {
-        for w in windows.values where w.chromeless && w.frame != frame {
+        for w in windows.values + [linkWindow].compactMap({ $0 }) where w.chromeless && w.frame != frame {
             w.setFrame(frame, display: true)
         }
     }
 
     func closeAll() {
-        let all = Array(windows.values)
+        let all = Array(windows.values) + [linkWindow].compactMap { $0 }
         windows = [:]
+        linkWindow = nil
         all.forEach { $0.close() }
     }
 
@@ -257,21 +286,34 @@ final class WebKitBrowser: SiteBrowser {
 
 /// A single site in a window with no address bar or tabs. Navigation is limited to the site's
 /// allowed domains; sign-in popups open in a small window of their own.
+/// A link window shows a page opened from a link, and stays on that page's site.
 final class WebWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
-    let tile: SiteTile
+    private(set) var tile: SiteTile
     let chromeless: Bool
+    let isLink: Bool
     let webView: WKWebView
     var onClose: (() -> Void)?
+    /// Shows a message when a page is kept from opening.
     var onBlockedNavigation: ((String) -> Void)?
+    /// Whether a clicked link to another site may open on its own (Settings → General).
+    var openLinks: () -> Bool = { false }
+    var onOpenLink: ((URL) -> Void)?
+    /// A link window followed a redirect to another site.
+    var onSiteChanged: (() -> Void)?
+    /// The site a link window stays on, set once its first page loads.
+    private var linkSite: String?
+    private var pagesLoaded = 0
+    private var followNextPage = false
     /// Whether a text field or editable area has focus in the page, so a Back shortcut set to
     /// "ignore while typing" leaves the key alone.
     fileprivate(set) var isEditingText = false
     private var popups: [PopupWindow] = []
     private static let messageName = "avadhanaEditing"
 
-    init(tile: SiteTile, url: URL, frame: NSRect, chromeless: Bool) {
+    init(tile: SiteTile, url: URL, frame: NSRect, chromeless: Bool, isLink: Bool = false) {
         self.tile = tile
         self.chromeless = chromeless
+        self.isLink = isLink
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
@@ -334,12 +376,31 @@ final class WebWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         switch url.scheme?.lowercased() {
         case "http", "https":
             let host = url.host?.lowercased() ?? ""
-            // With no domains listed, a web site may stay on its own host.
-            if tile.allows(host: host) || (tile.allowedDomains.isEmpty && host == tile.startHost) {
-                decisionHandler(.allow)
+            let type = navigationAction.navigationType
+            if isLink {
+                switch Links.linkNavigation(to: host, site: linkSite,
+                                            isUserAction: [.linkActivated, .formSubmitted, .formResubmitted].contains(type),
+                                            onFirstPage: pagesLoaded <= 1, isBackForward: type == .backForward) {
+                case .allow:
+                    decisionHandler(.allow)
+                case .allowAndFollow:
+                    followNextPage = true
+                    decisionHandler(.allow)
+                case .block:
+                    decisionHandler(.cancel)
+                    onBlockedNavigation?(blockedMessage(host))
+                }
             } else {
-                decisionHandler(.cancel)
-                onBlockedNavigation?(host)
+                switch Links.siteNavigation(tile, to: host, isLinkClick: type == .linkActivated, openLinks: openLinks()) {
+                case .allow:
+                    decisionHandler(.allow)
+                case .openAsLink:
+                    decisionHandler(.cancel)
+                    onOpenLink?(url)
+                case .block:
+                    decisionHandler(.cancel)
+                    onBlockedNavigation?(blockedMessage(host))
+                }
             }
         case "file":
             // A local page may open other files in its own folder, nothing else on disk.
@@ -356,6 +417,24 @@ final class WebWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
     }
 
+    private func blockedMessage(_ host: String) -> String {
+        isLink ? "\(host) isn't one of your sites" : "\(host) isn't one of \(tile.name)'s allowed sites"
+    }
+
+    /// A link window settles on the site of the first page it shows, or of a redirect it followed.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard isLink, webView === self.webView else { return }
+        pagesLoaded += 1
+        if followNextPage || linkSite == nil, let url = webView.url {
+            // A page on this Mac has no site, so it can't lead anywhere on the web.
+            linkSite = url.host.map(Links.siteDomain) ?? ""
+            tile = .link(to: url)
+            title = tile.name
+            onSiteChanged?()
+        }
+        followNextPage = false
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()   // recover from a crashed page instead of showing a blank window
     }
@@ -367,7 +446,7 @@ final class WebWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard windowFeatures.width != nil || windowFeatures.height != nil else {
-            if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
+            if navigationAction.targetFrame == nil { openHere(navigationAction, in: webView) }
             return nil
         }
         let size = NSSize(width: CGFloat(windowFeatures.width?.doubleValue ?? 520),
@@ -378,6 +457,28 @@ final class WebWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         popups.append(popup)
         popup.makeKeyAndOrderFront(nil)
         return popup.webView
+    }
+
+    /// A link that would open a new tab. The same rules apply as for a link clicked in the page.
+    private func openHere(_ action: WKNavigationAction, in webView: WKWebView) {
+        guard let url = action.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            webView.load(action.request)
+            return
+        }
+        let host = url.host?.lowercased() ?? ""
+        if isLink {
+            if linkSite.map({ Links.host(host, isWithin: $0) }) ?? true {
+                webView.load(action.request)
+            } else {
+                onBlockedNavigation?(blockedMessage(host))
+            }
+            return
+        }
+        switch Links.siteNavigation(tile, to: host, isLinkClick: action.navigationType == .linkActivated, openLinks: openLinks()) {
+        case .allow: webView.load(action.request)
+        case .openAsLink: onOpenLink?(url)
+        case .block: onBlockedNavigation?(blockedMessage(host))
+        }
     }
 
     // MARK: Page dialogs (titled with the site's host so a page can't pose as the system)

@@ -48,10 +48,14 @@ struct GeneralSettings: View {
                     }
                 }
                 .pickerStyle(.inline)
+                Toggle("Open web links", isOn: $c.config.openLinks)
+                Toggle("Receive links from other apps", isOn: receiveBinding)
+                    .disabled(!c.config.openLinks)
             } header: {
                 Text("Web browser")
             } footer: {
-                Text(BrowserKind.explanation).foregroundStyle(.secondary)
+                Text(BrowserKind.explanation + " Links open here only while Avadhāna is on. Receiving them makes Avadhāna your default browser; it passes links to your usual browser while off.")
+                    .foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -61,20 +65,90 @@ struct GeneralSettings: View {
                     Button("Show in Finder") { c.revealConfig() }
                 }
             }
-            Section {
-                LabeledContent("Version", value: AppInfo.versionLine)
-                if let updated = AppInfo.lastUpdated {
-                    LabeledContent("Last updated", value: updated)
-                }
-            }
+            UpdateSettings()
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
     }
 
+    /// On asks macOS to make Avadhāna the default browser (you confirm); off hands links back.
+    private var receiveBinding: Binding<Bool> {
+        Binding(get: { c.receivesLinks }, set: { $0 ? c.receiveLinks() : c.stopReceivingLinks() })
+    }
+
     /// Shows Safari when the saved browser has been uninstalled.
     private var browserBinding: Binding<BrowserKind> {
         Binding(get: { c.config.effectiveBrowser }, set: { c.config.browser = $0 })
+    }
+}
+
+// MARK: - Updates
+
+struct UpdateSettings: View {
+    @EnvironmentObject var c: AppController
+    @EnvironmentObject var updater: Updater
+
+    var body: some View {
+        Section {
+            LabeledContent("Version", value: AppInfo.versionLine)
+            if let updated = AppInfo.lastUpdated {
+                LabeledContent("Last updated", value: updated)
+            }
+            status
+            Toggle("Check for updates automatically", isOn: $c.config.checkForUpdates)
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text("Avadhāna asks GitHub for its latest release. Nothing about you or your Mac is sent.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        switch updater.state {
+        case .idle, .upToDate:
+            HStack {
+                Text(updater.state == .upToDate ? "Avadhāna is up to date." : "Not checked yet.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Check now") { updater.check(force: true) }
+            }
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Checking…").foregroundStyle(.secondary)
+            }
+        case .available(let release):
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Version \(release.version) is available.", systemImage: "arrow.down.circle")
+                    Spacer()
+                    Button("What's new") { c.openWebPage(release.pageURL) }
+                    Button("Update") { updater.install(release) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(c.inSession)
+                }
+                Text(c.inSession ? "Exit Avadhāna to update." : "Avadhāna will reopen when the update is done.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .updating:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Updating…").foregroundStyle(.secondary)
+            }
+        case .failed(let message, let release):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Download") { c.openWebPage(release?.pageURL ?? Release.allReleasesPage) }
+                    Button("Try again") {
+                        if let release { updater.install(release) } else { updater.check(force: true) }
+                    }
+                    .disabled(release != nil && c.inSession)
+                }
+            }
+        }
     }
 }
 
@@ -504,6 +578,8 @@ enum AppInfo {
 }
 
 struct CreditsView: View {
+    @EnvironmentObject var c: AppController
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
@@ -532,7 +608,7 @@ struct CreditsView: View {
                 VStack(spacing: 10) {
                     Text("Created by Rishi Verma")
                     Button {
-                        NSWorkspace.shared.open(AppInfo.donateURL)
+                        c.openWebPage(AppInfo.donateURL)
                     } label: {
                         Label("Donate", systemImage: "heart.fill")
                             .padding(.horizontal, 8)
