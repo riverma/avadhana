@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Avadhāna: cultivating your attention, one thing at a time</title>
+  <meta name="description" content="Avadhāna is a free, open-source macOS app that shows only the apps and websites you choose, one at a time, full screen, with everything else out of the way.">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-512.png">
+  <meta property="og:title" content="Avadhāna">
+  <meta property="og:description" content="Cultivating your attention, one thing at a time. A calm, full-screen launcher for macOS.">
+  <meta property="og:image" content="https://avadhana.riverma.com/assets/icon-512.png">
+  <meta property="og:url" content="https://avadhana.riverma.com/">
+  <meta name="twitter:card" content="summary">
+  <style>
+    :root {
+      --bg: #fffaf2;
+      --bg-soft: #fff1dc;
+      --card: #ffffff;
+      --text: #2b2118;
+      --muted: #6f6152;
+      --line: #f0dfc6;
+      --accent: #e8650f;
+      --accent-strong: #c9520a;
+      --on-accent: #ffffff;
+      --shadow: 0 1px 2px rgba(80, 45, 10, 0.06), 0 8px 28px rgba(80, 45, 10, 0.08);
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17120d;
+        --bg-soft: #211810;
+        --card: #241b13;
+        --text: #f6ece0;
+        --muted: #b9a893;
+        --line: #3a2c1f;
+        --accent: #f5821f;
+        --accent-strong: #ff9a45;
+        --on-accent: #1a0f05;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
+        color-scheme: dark;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; background: var(--bg); }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-strong); }
+    img { max-width: 100%; display: block; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+    .narrow { max-width: 680px; }
+    section { padding: 72px 0; }
+    h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; margin: 0; }
+    h2 { font-size: clamp(26px, 4vw, 34px); margin-bottom: 18px; }
+    h3 { font-size: 19px; margin-bottom: 6px; }
+    p { margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+    .lede { font-size: 19px; color: var(--muted); max-width: 640px; }
+
+    /* Header */
+    header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--text); text-decoration: none; }
+    .brand img { width: 30px; height: 30px; margin: 0; }
+    nav { display: flex; gap: 22px; font-size: 15px; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a:hover, nav a:focus-visible { color: var(--text); }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 13px 24px; border-radius: 12px; font-weight: 600; font-size: 16px; text-decoration: none; border: 1px solid transparent; transition: background-color .15s ease; }
+    .btn-primary { background: var(--accent); color: var(--on-accent); }
+    .btn-primary:hover, .btn-primary:focus-visible { background: var(--accent-strong); }
+    .btn-secondary { background: var(--card); color: var(--text); border-color: var(--line); }
+    .btn svg { width: 18px; height: 18px; flex: none; }
+
+    /* Hero */
+    .hero { padding: 88px 0 64px; background: radial-gradient(ellipse at 20% 0%, var(--bg-soft), var(--bg) 70%); }
+    .hero .icon { width: 112px; height: 112px; margin-bottom: 22px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr); gap: 48px; align-items: center; }
+    .hero-shot img { width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+    @media (max-width: 900px) { .hero-grid { grid-template-columns: 1fr; gap: 40px; } }
+    .hero h1 { font-size: clamp(40px, 7vw, 64px); font-weight: 700; }
+    .hero .meaning { color: var(--muted); margin: 8px 0 22px; font-size: 16px; }
+    .hero .tagline { font-size: clamp(22px, 3.4vw, 30px); font-weight: 600; margin-bottom: 14px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 30px 0 14px; }
+    .fineprint { font-size: 14px; color: var(--muted); }
+
+    /* Why */
+    .why { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .why p { font-size: 18px; }
+    .why .question { font-size: 21px; font-weight: 600; color: var(--text); margin: 26px 0; }
+
+    /* Features */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 28px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px 24px; box-shadow: var(--shadow); }
+    .card h3 { margin-bottom: 12px; }
+    .features-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; color: var(--muted); font-size: 16px; }
+    .features-list li::before { content: "•"; color: var(--accent); margin-right: 8px; }
+
+    /* Screenshots */
+    .shots { display: grid; gap: 28px; margin-top: 28px; }
+    .shots figure { margin: 0; }
+    .shots img { border-radius: 14px; border: 1px solid var(--line); box-shadow: var(--shadow); width: 100%; height: auto; }
+    .shots figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
+    .shots-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+
+    /* Steps */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; margin-top: 28px; }
+    .step { padding: 24px; border-radius: 18px; background: var(--bg-soft); border: 1px solid var(--line); }
+    .step .num { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 700; margin-bottom: 12px; }
+    .step p { color: var(--muted); margin: 0; font-size: 16px; }
+
+    /* Download */
+    .download-card { max-width: 600px; margin-top: 28px; }
+    .install { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 10px; }
+    .install .note { display: block; color: var(--muted); font-size: 15px; }
+    .meta span:empty { display: none; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); margin-top: 16px; }
+
+    /* FAQ */
+    .faq { max-width: 680px; margin-top: 20px; }
+    details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+    details summary { cursor: pointer; font-weight: 600; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::after { content: " +"; color: var(--muted); font-weight: 400; }
+    details[open] summary::after { content: " −"; }
+    details p { color: var(--muted); margin: 10px 0 0; }
+
+    footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+    footer p { margin: 0 0 8px; }
+    footer a { color: var(--muted); }
+
+    a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+    @media (max-width: 640px) {
+      nav { display: none; }
+      section { padding: 56px 0; }
+      .hero { padding: 64px 0 48px; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="30" height="30">Avadhāna</a>
+      <nav aria-label="Sections">
+        <a href="#why">Why</a>
+        <a href="#features">Key features</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/riverma/avadhana">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+        <img class="icon" src="assets/icon.svg" alt="Avadhāna app icon" width="132" height="132">
+        <h1>Avadhāna</h1>
+        <p class="meaning">अवधान · Sanskrit for attention, concentration</p>
+        <p class="tagline">Cultivating your attention, one thing at a time.</p>
+        <p class="lede">A calm, full-screen launcher for your Mac that shows only the apps and websites you choose, one at a time, with everything else out of the way.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/riverma/avadhana/releases/latest/download/Avadhana.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-5-5m5 5 5-5M5 20h14"/></svg>Download for Mac</a>
+          <a class="btn btn-secondary" href="https://github.com/riverma/avadhana"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Source code on GitHub</a>
+        </div>
+        <p class="fineprint"><span class="js-version">Version 0.1.0</span> · macOS 14 Sonoma or later · Apple silicon and Intel</p>
+        <p class="fineprint">Free, open source, and 100% auditable code. No ads, no tracking.</p>
+        </div>
+        <div class="hero-shot">
+          <img src="assets/screenshots/arrange.png" alt="The Avadhāna main window, with apps and websites arranged before starting" width="850" height="701">
+        </div>
+      </div>
+    </section>
+
+    <section id="why" class="why">
+      <div class="wrap">
+        <div class="narrow">
+        <h2>Why Avadhāna</h2>
+        <p>A computer puts the entire world one click away. Every app, every site, every notification, from anything and anywhere, can reach you. Each one competes for your attention, and it's easy to drift from what you sat down to do.</p>
+        <p class="question">What if you could choose more intentionally what reaches you, and what you put your attention on?</p>
+        <p>That's what Avadhāna is for.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <h2>Key features</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Only what you choose</h3>
+            <ul class="features-list">
+              <li>Pick your own apps and websites to show</li>
+              <li>Anything else opened from the Dock, Spotlight or a link is closed</li>
+              <li>Apps you already had open are hidden, never quit</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>One thing at a time</h3>
+            <ul class="features-list">
+              <li>Each app or site fills the screen</li>
+              <li>Dock and menu bar step aside</li>
+              <li>Home and Back always one click away</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Websites without the detours</h3>
+            <ul class="features-list">
+              <li>No address bar or tabs</li>
+              <li>Works with Safari, Firefox or Chrome</li>
+              <li>Your browser settings stay untouched</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Keyboard friendly</h3>
+            <ul class="features-list">
+              <li>Just start typing to search</li>
+              <li>Arrow keys to move, Return to open</li>
+              <li>Shortcuts you can change or turn off</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Grid or rows</h3>
+            <ul class="features-list">
+              <li>Big tiles or full-width rows</li>
+              <li>Arrange them in any order</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Exit any time</h3>
+            <ul class="features-list">
+              <li>Exit Avadhāna whenever you need to</li>
+              <li>Everything you had open comes back</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots" class="js-screenshots">
+      <div class="wrap">
+        <h2>Look and feel</h2>
+        <div class="shots">
+          <figure>
+            <img src="assets/screenshots/home.png" alt="The Avadhāna home screen: a full-screen grid of chosen apps and websites with a search box" loading="lazy">
+            <figcaption>The home screen while Avadhāna is on: just your apps and sites.</figcaption>
+          </figure>
+          <div class="shots-pair">
+            <figure>
+              <img src="assets/screenshots/home-rows.png" alt="The same home screen as full-width rows" loading="lazy">
+              <figcaption>Prefer a list? Switch to rows.</figcaption>
+            </figure>
+            <figure>
+              <img src="assets/screenshots/arrange.png" alt="The main window, where apps and websites are arranged before starting" loading="lazy">
+              <figcaption>Arrange your apps and sites, then start.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <div class="steps">
+          <div class="step"><span class="num">1</span><h3>Choose</h3><p>Add the apps and websites you need for the work in front of you.</p></div>
+          <div class="step"><span class="num">2</span><h3>Start Avadhāna</h3><p>Your Mac becomes a quiet launcher of just those things, one at a time.</p></div>
+          <div class="step"><span class="num">3</span><h3>Accept permissions</h3><p>Allow Accessibility access when asked, so apps can fill the screen. Questions? See the <a href="#faq">FAQ</a> below.</p></div>
+          <div class="step"><span class="num">4</span><h3>Exit when you're done</h3><p>The Dock comes back and the apps you had open reappear.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="why">
+      <div class="wrap">
+        <h2>Download</h2>
+        <p class="lede">Free, open source, and 100% auditable code. No account needed, no tracking, no ads.</p>
+        <div class="card download-card">
+          <ol class="install">
+            <li>1. Download <strong>Avadhana.dmg</strong> and open it.</li>
+            <li>2. Drag <strong>Avadhāna</strong> into <strong>Applications</strong>.</li>
+            <li>3. Open Avadhāna and allow <strong>Accessibility</strong> access when asked.
+              <span class="note">This lets it size app windows to fill the screen and keep other apps out of the way.</span></li>
+          </ol>
+          <a class="btn btn-primary" href="https://github.com/riverma/avadhana/releases/latest/download/Avadhana.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-5-5m5 5 5-5M5 20h14"/></svg>Download Avadhana.dmg</a>
+          <div class="meta">
+            <span class="js-version">Version 0.1.0</span>
+            <span class="js-date"></span>
+            <span>macOS 14 or later</span>
+            <a href="https://github.com/riverma/avadhana/releases">All releases and release notes</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap">
+        <h2>Frequently Asked Questions</h2>
+        <div class="faq">
+          <details>
+            <summary>What does Avadhāna mean?</summary>
+            <p>Avadhāna (अवधान) is a Sanskrit word for attention or concentration. It joins <em>ava</em> (down, upon) with <em>dhā</em> (to place): attention as something you deliberately place on one thing. That's the idea behind the app. You decide where your attention goes, and your Mac helps you keep it there, one thing at a time.</p>
+            <p>Avadhāna follows the <a href="https://ahimsa-design.riverma.com/principles.html">Ahimsa design principles</a> for non-harmful interfaces: nothing appears unless you ask for it, nothing pushes you with urgency, and you can always leave.</p>
+          </details>
+          <details>
+            <summary>Why does Avadhāna need Accessibility access?</summary>
+            <p>macOS only lets an app resize other apps' windows with this permission. Avadhāna uses it to make the app you open fill the screen and to keep other apps out of the way. It doesn't record what you type or what's on screen, and Avadhāna itself never sends anything anywhere.</p>
+          </details>
+          <details>
+            <summary>Will it change my browser or my Mac's settings?</summary>
+            <p>Sites open in a separate browser profile, so your normal browser settings, bookmarks and history aren't touched. The Dock is hidden while Avadhāna is on, and your Dock settings are restored when you exit.</p>
+          </details>
+          <details>
+            <summary>What happens to apps I already had open?</summary>
+            <p>They're hidden, never quit, so you won't lose any work. They reappear when you exit.</p>
+          </details>
+          <details>
+            <summary>Is it on the Mac App Store?</summary>
+            <p>No. App Store apps run in a sandbox that doesn't allow managing other apps' windows, which is at the heart of what Avadhāna does. Releases are signed with a Developer ID and notarized by Apple.</p>
+          </details>
+          <details>
+            <summary>How can I support it?</summary>
+            <p>Avadhāna is free. If it helps you, a <a href="https://buy.stripe.com/9B6eVe8Gf4Bt21I6HFgrS00">donation</a> supports its development and other apps like it. Bug reports and ideas are welcome on <a href="https://github.com/riverma/avadhana/issues">GitHub</a>. You can also <a href="https://github.com/riverma/avadhana">star the repository on GitHub</a> to show your support.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>Created by <a href="https://riverma.com">Rishi Verma</a></p>
+      <p>
+        <a href="https://github.com/riverma/avadhana">GitHub</a> ·
+        <a href="https://github.com/riverma/avadhana/releases">Releases</a> ·
+        <a href="https://github.com/riverma/avadhana/blob/main/LICENSE">AGPL-3.0 license</a> ·
+        <a href="https://buy.stripe.com/9B6eVe8Gf4Bt21I6HFgrS00">Donate</a>
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    // Leave out any screenshot that hasn't been added yet, and the section if none exist.
+    (function () {
+      var section = document.querySelector('.js-screenshots');
+      var figures = section.querySelectorAll('figure');
+      var remaining = figures.length;
+      figures.forEach(function (fig) {
+        var img = fig.querySelector('img');
+        function missing() {
+          fig.remove();
+          remaining -= 1;
+          if (remaining === 0) section.remove();
+        }
+        if (img.complete && img.naturalWidth === 0) missing();
+        else img.addEventListener('error', missing);
+      });
+    })();
+
+    // Show the latest release's version and date; the static text stays if GitHub can't be reached.
+    fetch('https://api.github.com/repos/riverma/avadhana/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (release) {
+        if (!release || !release.tag_name) return;
+        var version = 'Version ' + release.tag_name.replace(/^v/, '');
+        document.querySelectorAll('.js-version').forEach(function (el) { el.textContent = version; });
+        if (release.published_at) {
+          var date = new Date(release.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+          document.querySelectorAll('.js-date').forEach(function (el) { el.textContent = 'Released ' + date; });
+        }
+      })
+      .catch(function () {});
+  </script>
+</body>
+</html>

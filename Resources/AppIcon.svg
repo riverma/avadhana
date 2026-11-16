@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Avadhāna: attention gathered toward a centre. Filled circles, each one outward more transparent. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FFFAF1"/>
+      <stop offset="0.6" stop-color="#FEEBCB"/>
+      <stop offset="1" stop-color="#FBD49E"/>
+    </linearGradient>
+    <clipPath id="shape">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#shape)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <circle cx="512" cy="512" r="420" fill="#F07A1A" fill-opacity="0.13"/>
+    <circle cx="512" cy="512" r="318" fill="#F07A1A" fill-opacity="0.24"/>
+    <circle cx="512" cy="512" r="222" fill="#F07A1A" fill-opacity="0.42"/>
+    <circle cx="512" cy="512" r="134" fill="#EE6C12"/>
+  </g>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185" ry="185" fill="none" stroke="#000" stroke-opacity="0.06"/>
+</svg>

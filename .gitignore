@@ -1,0 +1,15 @@
+# Build output
+.build/
+build/
+DerivedData/
+
+# Generated from Resources/AppIcon.svg by build.sh
+Resources/AppIcon.icns
+
+# Xcode / SwiftPM user state
+.swiftpm/
+xcuserdata/
+*.xcodeproj/
+
+# macOS
+.DS_Store
