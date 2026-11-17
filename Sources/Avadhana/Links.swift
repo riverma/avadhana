@@ -1,36 +1,41 @@
-import AppKit
-import Darwin
+import Foundation
 
 /// Rules for web links while Avadhāna is on: links from your apps and links clicked in your sites
-/// open one page at a time, without an address bar. Everything else stays closed.
+/// open one page at a time, without an address bar, and stay on that page's site.
 enum Links {
-    /// The app bundle an executable belongs to, so helper processes count as their app:
-    /// ".../Slack.app/Contents/Frameworks/Slack Helper.app/Contents/MacOS/Slack Helper" → ".../Slack.app".
-    static func appBundlePath(forExecutable path: String) -> String? {
-        guard let r = path.range(of: ".app/") else { return nil }
-        return String(path[..<r.lowerBound]) + ".app"
+    /// What a browser window shows: the address in its address bar, and its number of tabs (nil
+    /// when the browser doesn't report tabs, as with Safari).
+    struct WindowState: Equatable {
+        var address: String?
+        var tabs: Int?
     }
 
-    /// The app that sent a link: the sending process's app, or the nearest app among its parents
-    /// (for links opened by a helper, or by `open` in a terminal).
-    static func sendingApp(pid: pid_t) -> (bundleID: String, name: String)? {
-        var current = pid
-        for _ in 0..<16 where current > 1 {
-            if let path = executablePath(pid: current), let appPath = appBundlePath(forExecutable: path),
-               let id = Bundle(path: appPath)?.bundleIdentifier {
-                var name = FileManager.default.displayName(atPath: appPath)
-                if name.hasSuffix(".app") { name.removeLast(4) }
-                return (id, name)
-            }
-            guard let parent = parentPID(of: current), parent != current else { break }
-            current = parent
+    /// Whether a browser that just came forward shows a page that wasn't there before: a new window,
+    /// a new tab, or (when tabs aren't reported) a different address. A browser opened during the
+    /// session shows only new pages.
+    static func isNewPage(_ now: WindowState, comparedTo before: WindowState?, launched: Bool) -> Bool {
+        guard now.address?.isEmpty == false else { return false }   // nothing loaded yet
+        guard let before, !launched else { return true }
+        if let tabs = now.tabs, let earlier = before.tabs { return tabs > earlier }
+        return now.address != before.address
+    }
+
+    /// A web address from a browser's address bar, which often leaves out "https://".
+    /// Search text and other kinds of addresses give nil.
+    static func webURL(fromAddress text: String) -> URL? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !t.contains(where: \.isWhitespace) else { return nil }
+        let lower = t.lowercased()
+        let candidate: String
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            candidate = t
+        } else if t.contains("://") || t.hasPrefix("about:") || !t.contains(".") {
+            return nil
+        } else {
+            candidate = "https://" + t
         }
-        return nil
-    }
-
-    /// Links may come from Avadhāna itself or from an added app (including its helpers).
-    static func isAllowedSender(_ bundleID: String, allowedApps: Set<String>, own: String) -> Bool {
-        bundleID == own || allowedApps.contains(bundleID) || allowedApps.contains { bundleID.hasPrefix($0 + ".") }
+        guard let url = URL(string: candidate), url.host?.contains(".") == true else { return nil }
+        return url
     }
 
     /// The site a host belongs to, so a link can move between that site's pages:
@@ -74,83 +79,6 @@ enum Links {
         guard let site else { return .allowAndFollow }
         if Links.host(host, isWithin: site) { return .allow }
         return !isUserAction && onFirstPage ? .allowAndFollow : .block
-    }
-
-    // MARK: Process info
-
-    private static func executablePath(pid: pid_t) -> String? {
-        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        let n = proc_pidpath(pid, &buf, UInt32(buf.count))
-        return n > 0 ? String(cString: buf) : nil
-    }
-
-    private static func parentPID(of pid: pid_t) -> pid_t? {
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
-        return info.kp_eproc.e_ppid
-    }
-}
-
-/// Avadhāna receives web links by being the default web browser. While Avadhāna is off it passes
-/// every link straight on to your everyday browser.
-@MainActor
-enum LinkHandler {
-    private static let probe = URL(string: "https://example.com")!
-
-    static var ownBundleID: String { Bundle.main.bundleIdentifier ?? "com.riverma.avadhana" }
-
-    /// The app that currently opens web links.
-    static var currentHandler: URL? { NSWorkspace.shared.urlForApplication(toOpen: probe) }
-
-    static var isAvadhana: Bool {
-        currentHandler.flatMap { Bundle(url: $0)?.bundleIdentifier } == ownBundleID
-    }
-
-    /// Browsers that can open web links, other than Avadhāna, one per bundle ID.
-    static var browsers: [(bundleID: String, name: String, url: URL)] {
-        var seen: Set<String> = [ownBundleID]
-        return NSWorkspace.shared.urlsForApplications(toOpen: probe).compactMap { url in
-            guard let id = Bundle(url: url)?.bundleIdentifier, seen.insert(id).inserted else { return nil }
-            var name = FileManager.default.displayName(atPath: url.path)
-            if name.hasSuffix(".app") { name.removeLast(4) }
-            return (id, name, url)
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
-
-    static func appURL(bundleID: String?) -> URL {
-        if let bundleID, bundleID != ownBundleID,
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return url
-        }
-        return URL(fileURLWithPath: "/Applications/Safari.app")
-    }
-
-    /// Makes an app the default web browser. macOS asks you to confirm.
-    static func makeDefault(_ appURL: URL, completion: @escaping @MainActor (Error?) -> Void) {
-        NSWorkspace.shared.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "http") { error in
-            DispatchQueue.main.async {
-                guard error == nil else { completion(error); return }
-                // macOS normally sets both together; set https too if it didn't.
-                let httpsHandler = NSWorkspace.shared.urlForApplication(toOpen: probe)
-                if httpsHandler.flatMap({ Bundle(url: $0)?.bundleIdentifier }) == Bundle(url: appURL)?.bundleIdentifier {
-                    completion(nil)
-                } else {
-                    NSWorkspace.shared.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "https") { error in
-                        DispatchQueue.main.async { completion(error) }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Opens links in your everyday browser, never in Avadhāna.
-    static func forward(_ urls: [URL], to bundleID: String?) {
-        guard !urls.isEmpty else { return }
-        NSWorkspace.shared.open(urls, withApplicationAt: appURL(bundleID: bundleID),
-                                configuration: NSWorkspace.OpenConfiguration())
     }
 }
 

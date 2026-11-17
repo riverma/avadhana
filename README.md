@@ -26,7 +26,7 @@
 * **Only what you choose.** While Avadhāna is on, apps that aren't on your list are closed when opened (from the Dock, Spotlight or a link), and apps that were already open are hidden, never quit.
 * **One thing at a time.** Each app or site fills the screen. The Dock and menu bar step aside, and a bar at the bottom offers Home, Back and Exit.
 * **Websites without the detours.** Sites open with no address bar or tabs in Safari (WebKit), Firefox or Chrome, using a profile separate from your normal browser. With Safari, a site stays within its allowed domains.
-* **Web links, one page at a time.** Links from your apps, and links you click in your sites, open on their own in your chosen browser with no address bar, and stay on that page's site. Links from Spotlight or apps you haven't added stay closed. To receive links from apps, Avadhāna becomes your default browser and passes links to your everyday browser while it's off.
+* **Web links, one page at a time.** Links from your apps, and links you click in your sites, open on their own in your chosen browser with no address bar, and stay on that page's site. A link from one of your apps still goes to your usual browser, and Avadhāna moves it over as it arrives (your default browser isn't changed). Links opened from Spotlight stay closed.
 * **Spotlight works too.** Open any app on your list from Spotlight instead of going back to the home screen; anything else is closed with a message.
 * **Keyboard friendly.** Type to search; arrow keys, Page Up/Down, Home and End to move; Return to open. Home (⌘Esc) and Back (⌃⌘⌫) work in every app and can be changed or turned off.
 * **Grid or rows**, arranged by dragging or from a tile's right-click menu.
@@ -70,7 +70,7 @@ This guide provides a quick way to get started with Avadhāna. See the [website]
 
 * **Writing session:** add your editor and a reference site such as MDN; open each from the home screen and switch with Home (⌘Esc).
 * **Staying on one website:** add a site with Safari as the browser and list its allowed domains (for example `github.com, githubusercontent.com`). Links elsewhere won't open.
-* **Links from your apps:** in Settings → General, turn on **Receive links from other apps**. While Avadhāna is on, a link in Mail or Slack (if you've added them) opens full screen; Back returns to the app.
+* **Links from your apps:** while Avadhāna is on, a link in Mail or Slack (if you've added them) opens full screen; Back returns to the app. Turn this off in Settings → General → **Open web links from my apps**.
 * **Starting from a script:** `open -a Avadhana --args --start` opens Avadhāna and starts right away.
 * **Your own keys:** Settings → Shortcuts lists every shortcut. Record new keys, turn any off, or set Home/Back to "Ignore while typing" to keep keys like ⌘⌫ working in text fields.
 
@@ -109,7 +109,7 @@ The website lives in `docs/` and is served by GitHub Pages at [avadhana.riverma.
    1. Run `./build.sh` and open `build/Avadhana.app`; Settings → General shows the version and the git commit it was built from.
    2. Add an app and a site, then click **Start Avadhāna**. Open each tile; it should fill the screen above the bottom bar.
    3. Open an app on your list from Spotlight; it should fill the screen. Open one that isn't; it should close and a message should explain why.
-   4. With **Receive links from other apps** on, click a link in an app on your list; it should open full screen, and Back should return to the app.
+   4. Click a link in an app on your list; your usual browser should flash briefly, then the page should open full screen in Avadhāna, and Back should return to the app.
    5. Press ⌘Esc and ⌃⌘⌫ inside another app; they should go Home and Back.
    6. Click **Exit Avadhāna** and choose **Exit**; the Dock and previously open apps should come back.
 
@@ -123,8 +123,8 @@ See our [releases page](https://github.com/riverma/avadhana/releases) for our ke
 
 1. Why does Avadhāna need Accessibility access?
    - macOS only lets an app resize other apps' windows with this permission. Avadhāna doesn't record what you type or what's on screen, and sends nothing anywhere.
-2. Why would Avadhāna be my default web browser?
-   - It's optional (Settings → General → **Receive links from other apps**), and only needed to open links from your apps while Avadhāna is on. While Avadhāna is off, every link goes straight to the browser you used before. Turning the setting off gives links back to that browser.
+2. How do links from my apps open in Avadhāna?
+   - The link still goes to your usual browser. While Avadhāna is on, it notices the new page as the browser comes forward, closes that tab, and opens the page in Avadhāna instead. It reads the page address with the Accessibility access it already has, never changes your default browser, and leaves your own tabs alone.
 3. Will it change my browser or my Mac's settings?
    - Sites open in a separate browser profile, so your normal browser settings, bookmarks and history aren't touched. The Dock is hidden while Avadhāna is on; its original settings are saved first and restored when you exit, or on the next launch if the app quits unexpectedly.
 4. Is it on the Mac App Store?

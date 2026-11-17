@@ -104,8 +104,6 @@ enum BrowserKind: String, Codable, CaseIterable, Identifiable {
 
     static var installed: [BrowserKind] { allCases.filter(\.isInstalled) }
     static var allBundleIDs: Set<String> { Set(allCases.map(\.bundleID)) }
-
-    static let explanation = "Sites open with no address bar or tabs. Your existing browser settings won't be affected."
 }
 
 struct Config: Codable, Equatable {
@@ -118,12 +116,11 @@ struct Config: Codable, Equatable {
     var order: [String]
     /// Customized shortcuts, keyed by `ShortcutAction.rawValue`. Missing entries use the defaults.
     var shortcuts: [String: ShortcutSetting]
-    /// While Avadhāna is on, web links from your apps, and links you click in your sites, open
-    /// in the chosen web browser with no address bar.
+    /// While Avadhāna is on, links you click in your sites to other sites open on their own.
     var openLinks: Bool
-    /// Bundle ID of the browser that opens web links while Avadhāna is off, when Avadhāna receives
-    /// your web links. Nil means Safari.
-    var everydayBrowser: String?
+    /// While Avadhāna is on, web links your apps open in your usual browser are moved into the
+    /// chosen browser, without an address bar.
+    var openAppLinks: Bool
     /// Looks for a new release on GitHub. Shown only in Settings.
     var checkForUpdates: Bool
 
@@ -205,7 +202,7 @@ struct Config: Codable, Equatable {
     static var defaults: Config {
         Config(layout: .grid, hideDockDuringSession: true, browser: .safari,
                apps: [], sites: [], order: [], shortcuts: [:],
-               openLinks: true, everydayBrowser: nil, checkForUpdates: true)
+               openLinks: true, openAppLinks: true, checkForUpdates: true)
     }
 }
 
@@ -221,7 +218,7 @@ extension Config {
         let saved = (try? c.decodeIfPresent([String: ShortcutSetting].self, forKey: .shortcuts)) ?? [:]
         shortcuts = saved.filter { ShortcutAction(rawValue: $0.key) != nil }   // drop retired shortcuts
         openLinks = try c.decodeIfPresent(Bool.self, forKey: .openLinks) ?? true
-        everydayBrowser = try c.decodeIfPresent(String.self, forKey: .everydayBrowser)
+        openAppLinks = try c.decodeIfPresent(Bool.self, forKey: .openAppLinks) ?? true
         checkForUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkForUpdates) ?? true
     }
 }

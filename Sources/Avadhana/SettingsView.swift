@@ -48,14 +48,10 @@ struct GeneralSettings: View {
                     }
                 }
                 .pickerStyle(.inline)
-                Toggle("Open web links", isOn: $c.config.openLinks)
-                Toggle("Receive links from other apps", isOn: receiveBinding)
-                    .disabled(!c.config.openLinks)
+                Toggle("Open web links from my sites", isOn: $c.config.openLinks)
+                Toggle("Open web links from my apps", isOn: $c.config.openAppLinks)
             } header: {
                 Text("Web browser")
-            } footer: {
-                Text(BrowserKind.explanation + " Links open here only while Avadhāna is on. Receiving them makes Avadhāna your default browser; it passes links to your usual browser while off.")
-                    .foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -69,11 +65,6 @@ struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-    }
-
-    /// On asks macOS to make Avadhāna the default browser (you confirm); off hands links back.
-    private var receiveBinding: Binding<Bool> {
-        Binding(get: { c.receivesLinks }, set: { $0 ? c.receiveLinks() : c.stopReceivingLinks() })
     }
 
     /// Shows Safari when the saved browser has been uninstalled.
@@ -98,9 +89,6 @@ struct UpdateSettings: View {
             Toggle("Check for updates automatically", isOn: $c.config.checkForUpdates)
         } header: {
             Text("Updates")
-        } footer: {
-            Text("Avadhāna asks GitHub for its latest release. Nothing about you or your Mac is sent.")
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -467,7 +455,7 @@ struct ShortcutsSettings: View {
             Section("When Avadhāna is in front") {
                 ForEach(ShortcutAction.allCases.filter { !$0.isGlobal }) { ShortcutRow(action: $0) }
             }
-            Section("Home screen (fixed)") {
+            Section("Home Screen") {
                 ForEach(fixedKeys, id: \.0) { keys, action in
                     LabeledContent(keys) { Text(action).foregroundStyle(.secondary) }
                 }

@@ -3,7 +3,9 @@
 # ticket. Output: build/Avadhana.dmg, ready to attach to a GitHub release.
 #
 # One-time setup:
-#   1. Xcode → Settings → Accounts → (your team) → Manage Certificates → + → "Developer ID Application"
+#   1. Create a "Developer ID Application" certificate (Account Holder only): at
+#      https://developer.apple.com/account/resources/certificates, upload a certificate request made
+#      in Keychain Access, then add the downloaded certificate to your login keychain
 #   2. Create an app-specific password at https://account.apple.com (Sign-In and Security), then:
 #        xcrun notarytool store-credentials avadhana-notary --apple-id <your Apple ID> --team-id <your team ID>
 set -euo pipefail

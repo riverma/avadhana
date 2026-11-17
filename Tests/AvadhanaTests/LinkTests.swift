@@ -4,39 +4,47 @@ import XCTest
 final class LinkTests: XCTestCase {
     private let github = SiteTile(name: "GitHub", url: "https://github.com", allowedDomains: ["github.com"])
 
-    // MARK: Who sent a link
+    // MARK: Telling a link's page apart from your own
 
-    func testHelperProcessesCountAsTheirApp() {
-        XCTAssertEqual(Links.appBundlePath(forExecutable: "/Applications/Slack.app/Contents/Frameworks/Slack Helper.app/Contents/MacOS/Slack Helper"),
-                       "/Applications/Slack.app")
-        XCTAssertEqual(Links.appBundlePath(forExecutable: "/System/Library/CoreServices/Spotlight.app/Contents/MacOS/Spotlight"),
-                       "/System/Library/CoreServices/Spotlight.app")
-        XCTAssertNil(Links.appBundlePath(forExecutable: "/usr/bin/open"))
+    private func state(_ address: String?, tabs: Int? = nil) -> Links.WindowState {
+        Links.WindowState(address: address, tabs: tabs)
     }
 
-    func testSendingAppOfThisProcessIsFound() {
-        // The test runner isn't an app, so this walks up through its parents and must stop safely.
-        _ = Links.sendingApp(pid: getpid())
-        XCTAssertNil(Links.sendingApp(pid: 1), "launchd is never treated as an app")
-        XCTAssertNil(Links.sendingApp(pid: 999_999), "an unknown process sends nothing")
+    func testNewTabIsALink() {
+        XCTAssertTrue(Links.isNewPage(state("example.com", tabs: 8), comparedTo: state("github.com", tabs: 7), launched: false))
     }
 
-    func testSendingAppResolvesRunningApps() throws {
-        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first else {
-            throw XCTSkip("Finder isn't running")
-        }
-        XCTAssertEqual(Links.sendingApp(pid: finder.processIdentifier)?.bundleID, "com.apple.finder")
+    func testSameTabsMeansYourOwnPageEvenIfItsAddressChanged() {
+        // Firefox and Chrome report tabs; a page changing its own address isn't a link.
+        XCTAssertFalse(Links.isNewPage(state("mail.proton.me/inbox/2", tabs: 7), comparedTo: state("mail.proton.me/inbox", tabs: 7), launched: false))
+        XCTAssertFalse(Links.isNewPage(state("github.com", tabs: 6), comparedTo: state("github.com", tabs: 7), launched: false))
     }
 
-    func testOnlyAddedAppsAndAvadhanaMaySendLinks() {
-        let allowed: Set<String> = ["com.tinyspeck.slackmacgap", "com.apple.mail"]
-        let own = "com.riverma.avadhana"
-        XCTAssertTrue(Links.isAllowedSender("com.apple.mail", allowedApps: allowed, own: own))
-        XCTAssertTrue(Links.isAllowedSender("com.tinyspeck.slackmacgap.helper", allowedApps: allowed, own: own))
-        XCTAssertTrue(Links.isAllowedSender(own, allowedApps: allowed, own: own))
-        XCTAssertFalse(Links.isAllowedSender("com.apple.Spotlight", allowedApps: allowed, own: own))
-        XCTAssertFalse(Links.isAllowedSender("com.apple.mailx", allowedApps: allowed, own: own), "a prefix alone isn't enough")
-        XCTAssertFalse(Links.isAllowedSender("", allowedApps: allowed, own: own))
+    func testWithoutTabCountsANewAddressIsALink() {
+        // Safari doesn't report tabs.
+        XCTAssertTrue(Links.isNewPage(state("https://example.com/"), comparedTo: state("https://github.com/"), launched: false))
+        XCTAssertFalse(Links.isNewPage(state("https://github.com/"), comparedTo: state("https://github.com/"), launched: false))
+    }
+
+    func testNewWindowOrNewlyOpenedBrowserIsALink() {
+        XCTAssertTrue(Links.isNewPage(state("example.com", tabs: 1), comparedTo: nil, launched: false))
+        XCTAssertTrue(Links.isNewPage(state("example.com", tabs: 3), comparedTo: state("example.com", tabs: 3), launched: true))
+    }
+
+    func testNothingLoadedYetIsntALink() {
+        XCTAssertFalse(Links.isNewPage(state(""), comparedTo: nil, launched: true))
+        XCTAssertFalse(Links.isNewPage(state(nil), comparedTo: nil, launched: true))
+    }
+
+    func testAddressBarText() {
+        XCTAssertEqual(Links.webURL(fromAddress: "example.com/?a=1")?.absoluteString, "https://example.com/?a=1")
+        XCTAssertEqual(Links.webURL(fromAddress: " https://github.com/riverma ")?.absoluteString, "https://github.com/riverma")
+        XCTAssertEqual(Links.webURL(fromAddress: "http://neverssl.com")?.absoluteString, "http://neverssl.com")
+        XCTAssertNil(Links.webURL(fromAddress: "how to focus"), "search text")
+        XCTAssertNil(Links.webURL(fromAddress: "about:newtab"))
+        XCTAssertNil(Links.webURL(fromAddress: "file:///Users/me/page.html"))
+        XCTAssertNil(Links.webURL(fromAddress: "localhost"))
+        XCTAssertNil(Links.webURL(fromAddress: ""))
     }
 
     // MARK: Sites of a host

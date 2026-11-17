@@ -50,15 +50,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(c.apps.isEmpty && c.sites.isEmpty && c.order.isEmpty && c.shortcuts.isEmpty)
         XCTAssertTrue(c.openLinks, "web links open by default")
         XCTAssertTrue(c.checkForUpdates)
-        XCTAssertNil(c.everydayBrowser)
+        XCTAssertTrue(c.openAppLinks)
     }
 
     func testLinkAndUpdateSettingsAreKept() throws {
-        let json = #"{"openLinks": false, "checkForUpdates": false, "everydayBrowser": "org.mozilla.firefox"}"#
+        let json = #"{"openLinks": false, "openAppLinks": false, "checkForUpdates": false}"#
         let c = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
         XCTAssertFalse(c.openLinks)
         XCTAssertFalse(c.checkForUpdates)
-        XCTAssertEqual(c.everydayBrowser, "org.mozilla.firefox")
+        XCTAssertFalse(c.openAppLinks)
     }
 
     func testUnknownBrowserFallsBackToSafari() throws {
@@ -82,7 +82,7 @@ final class ConfigTests: XCTestCase {
         var c = makeConfig()
         c.layout = .rows
         c.openLinks = false
-        c.everydayBrowser = "com.google.Chrome"
+        c.openAppLinks = false
         c.order = c.tiles.map(\.id).reversed()
         let decoded = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(c))
         XCTAssertEqual(decoded, c)

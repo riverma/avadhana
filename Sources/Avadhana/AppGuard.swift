@@ -15,6 +15,13 @@ final class AppGuard {
     var onBlocked: (NSRunningApplication) -> Void = { _ in }
     var onAllowedActivated: (NSRunningApplication) -> Void = { _ in }
     var onHomeActivated: () -> Void = {}
+    /// Offered a browser that just came forward, before it's closed or hidden, in case it's showing
+    /// a link from one of your apps. Returns true to take it; `done(true)` means the link was moved.
+    var catchLink: (NSRunningApplication, _ launched: Bool, _ done: @escaping (Bool) -> Void) -> Bool = { _, _, _ in false }
+    /// Browsers being checked for a link; left alone until that's done.
+    private(set) var checking: Set<pid_t> = []
+    /// When Spotlight was last in use. Links opened from Spotlight aren't moved.
+    private var spotlightUsed: Date?
 
     private var observers: [NSObjectProtocol] = []
     private var preexisting: Set<pid_t> = []
@@ -66,6 +73,7 @@ final class AppGuard {
         }
         hiddenByUs = []
         preexisting = []
+        checking = []
     }
 
     /// Single-app view: hide every other regular app (they're unhidden when the session ends).
@@ -116,7 +124,7 @@ final class AppGuard {
     func sweep() {
         guard !observers.isEmpty else { return }
         for app in NSWorkspace.shared.runningApplications
-        where app.activationPolicy == .regular && !app.isTerminated {
+        where app.activationPolicy == .regular && !app.isTerminated && !checking.contains(app.processIdentifier) {
             switch verdict(for: app) {
             case .hideOnly where !app.isHidden: hide(app)
             case .block: block(app)
@@ -125,9 +133,32 @@ final class AppGuard {
         }
     }
 
+    /// True if Spotlight was in use in the last few seconds, or is on screen.
+    var spotlightRecentlyUsed: Bool {
+        if let spotlightUsed, Date().timeIntervalSince(spotlightUsed) < 3 { return true }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "Spotlight" }
+    }
+
     private func handle(_ note: Notification, launched: Bool) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        switch verdict(for: app) {
+        if app.bundleIdentifier == "com.apple.Spotlight" { spotlightUsed = Date() }
+        let pid = app.processIdentifier
+        if checking.contains(pid) { return }
+        let v = verdict(for: app)
+        // A browser coming forward may be showing a link from one of your apps.
+        if !launched, v == .hideOnly || v == .block,
+           catchLink(app, v == .block, { [weak self] moved in
+               guard let self else { return }
+               self.checking.remove(pid)
+               guard !app.isTerminated else { return }
+               if v == .block { self.block(app) } else { self.hide(app) }
+               if !moved { self.onBlocked(app) }
+           }) {
+            checking.insert(pid)
+            return
+        }
+        switch v {
         case .ours:
             if !launched { onHomeActivated() }
         case .allowed:

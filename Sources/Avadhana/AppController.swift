@@ -33,13 +33,12 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
     private var registeredHotKeys: Set<ShortcutAction> = []
     private var launchToken = 0
     /// The allowed app you were using, to return to when something else is blocked.
-    private weak var lastAllowedApp: NSRunningApplication?
-    /// Whether Avadhāna is the default web browser, so links from your apps reach it.
-    @Published var receivesLinks = false
+    private var lastAllowedApp: NSRunningApplication?
     /// Where Back returns to from a page opened from a link.
-    private weak var linkOpenerApp: NSRunningApplication?
+    private var linkOpenerApp: NSRunningApplication?
     private weak var linkOpenerWindow: WebWindow?
     let updater = Updater()
+    private let linkCatcher = LinkCatcher()
 
     // Home screen state
     @Published var query = "" { didSet { if query != oldValue { selection = 0 } } }
@@ -79,20 +78,10 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
 
     // MARK: - App lifecycle
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        // Web links arrive as Apple events when Avadhāna is the default browser.
-        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL(_:reply:)),
-                                                     forEventClass: AEEventClass(kInternetEventClass),
-                                                     andEventID: AEEventID(kAEGetURL))
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         tweaks.restoreIfNeeded()   // undo anything a crashed session left behind
         buildMenu()
         axTrusted = AX.isTrusted(prompt: false)
-        receivesLinks = LinkHandler.isAvadhana
-        // Opened only to pass a link on to your everyday browser: stay out of the way.
-        let openedForLink = (notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool) == false
 
         setupWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680),
                                styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -102,21 +91,14 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         setupWindow.isReleasedWhenClosed = false
         setupWindow.contentView = NSHostingView(rootView: SetupView().environmentObject(self))
         setupWindow.center()
-        if !openedForLink {
-            setupWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate()
-        }
+        setupWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate()
 
         guardian.browserBundleID = { [weak self] in self?.browser.externalBundleID }
         guardian.isFocusBrowser = { [weak self] app in self?.browser.isFocusProcess(app) ?? false }
         guardian.onBlocked = { [weak self] app in
             guard let self else { return }
-            let name = app.localizedName ?? "That app"
-            if self.config.openLinks && !self.receivesLinks && LinkHandler.browsers.contains(where: { $0.bundleID == app.bundleIdentifier }) {
-                self.showToast("\(name) hasn't been added to Avadhāna. To open links here, see Settings.")
-            } else {
-                self.showToast("\(name) hasn't been added to Avadhāna")
-            }
+            self.showToast("\(app.localizedName ?? "That app") hasn't been added to Avadhāna")
             // Go back to what you were doing rather than jumping to the home screen.
             if let previous = self.lastAllowedApp, !previous.isTerminated, previous.processIdentifier != app.processIdentifier {
                 previous.unhide()
@@ -132,6 +114,22 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
             self.currentAppName = app.localizedName ?? "App"
             self.guardian.hideOthers(except: app)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.windows.enforce(app) }
+        }
+        guardian.catchLink = { [weak self] app, launched, done in
+            guard let self, self.inSession, self.config.openAppLinks, self.axTrusted,
+                  self.linkCatcher.isBrowser(app), !self.guardian.spotlightRecentlyUsed,
+                  let opener = self.lastAllowedApp, !opener.isTerminated else { return false }
+            // A link from the app you were using: move its page into Avadhāna.
+            self.linkCatcher.catchLink(in: app, launched: launched) { url in
+                guard let url else { done(false); return }
+                // Come forward first: hiding the browser while it's active would bring back the app behind it.
+                self.openLink(url, fromApp: opener)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    done(true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.showLinkWindow() }
+                }
+            }
+            return true
         }
         guardian.onHomeActivated = { [weak self] in
             guard let self else { return }
@@ -173,13 +171,6 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         term.resume()
         terminationSignal = term
 
-        if openedForLink {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self, !self.inSession, NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
-                NSApp.terminate(nil)
-            }
-            return
-        }
         if config.checkForUpdates {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.updater.check() }
         }
@@ -189,7 +180,6 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
 
     func applicationDidBecomeActive(_ notification: Notification) {
         if inSession { NSApp.presentationOptions = [.hideDock, .hideMenuBar] }
-        receivesLinks = LinkHandler.isAvadhana
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -307,7 +297,6 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
             w.center()
             settingsWindow = w
         }
-        receivesLinks = LinkHandler.isAvadhana
         if config.checkForUpdates { updater.check() }
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
@@ -315,75 +304,10 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
 
     // MARK: - Web links
 
-    /// Makes Avadhāna the default web browser, remembering the current one as your everyday browser.
-    func receiveLinks() {
-        if let current = LinkHandler.currentHandler.flatMap({ Bundle(url: $0)?.bundleIdentifier }),
-           current != LinkHandler.ownBundleID {
-            config.everydayBrowser = current
-        }
-        LinkHandler.makeDefault(Bundle.main.bundleURL) { [weak self] error in
-            self?.receivesLinks = LinkHandler.isAvadhana
-            if let error { NSLog("Avadhana: couldn't become the default browser: \(error.localizedDescription)") }
-        }
-    }
-
-    /// Gives web links back to your everyday browser.
-    func stopReceivingLinks() {
-        LinkHandler.makeDefault(LinkHandler.appURL(bundleID: config.everydayBrowser)) { [weak self] _ in
-            self?.receivesLinks = LinkHandler.isAvadhana
-        }
-    }
-
-    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
-        guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let url = URL(string: string) else { return }
-        receive([url], senderPID: event.attributeDescriptor(forKeyword: keySenderPIDAttr)?.int32Value)
-    }
-
-    /// Web pages saved on this Mac, opened with Avadhāna as the default browser.
-    func application(_ application: NSApplication, open urls: [URL]) {
-        let pid = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: keySenderPIDAttr)?.int32Value
-        receive(urls, senderPID: pid)
-    }
-
-    /// While Avadhāna is off, links go straight to your everyday browser. While it's on, links from
-    /// your apps open in the chosen browser without an address bar; links from anywhere else don't.
-    private func receive(_ urls: [URL], senderPID: pid_t?) {
-        let links = urls.filter { ["http", "https"].contains($0.scheme?.lowercased() ?? "") || $0.isFileURL }
-        guard let link = links.last else { return }
-        guard inSession else {
-            LinkHandler.forward(links, to: config.everydayBrowser)
-            return
-        }
-        let sender = senderPID.flatMap(Links.sendingApp(pid:))
-        let front = NSWorkspace.shared.frontmostApplication
-        let senderID = sender?.bundleID ?? front?.bundleIdentifier ?? ""
-        let senderName = sender?.name ?? front?.localizedName ?? "this app"
-        guard config.openLinks else {
-            showToast("Opening web links is turned off in Settings")
-            return
-        }
-        guard Links.isAllowedSender(senderID, allowedApps: Set(config.apps.map(\.bundleID)), own: LinkHandler.ownBundleID) else {
-            NSLog("Avadhana: kept a link from %@ closed", senderName)
-            showToast("Links from \(senderName) don't open while Avadhāna is on")
-            return
-        }
-        NSLog("Avadhana: opening a link from %@", senderName)
-        let opener = senderID == LinkHandler.ownBundleID ? nil
-            : NSRunningApplication.runningApplications(withBundleIdentifier: senderID).first { !$0.isTerminated }
-        openLink(link, fromApp: opener)
-    }
-
     /// Avadhāna's own web links (donate, release notes): on their own while Avadhāna is on, so
-    /// they don't open a browser that isn't allowed; otherwise in your everyday browser.
+    /// they don't open a browser that isn't allowed; otherwise in your usual browser.
     func openWebPage(_ url: URL) {
-        if inSession {
-            openLink(url)
-        } else if receivesLinks {
-            LinkHandler.forward([url], to: config.everydayBrowser)
-        } else {
-            NSWorkspace.shared.open(url)
-        }
+        if inSession { openLink(url) } else { NSWorkspace.shared.open(url) }
     }
 
     func openLink(_ url: URL, fromApp app: NSRunningApplication? = nil, fromWindow window: WebWindow? = nil) {
@@ -392,6 +316,15 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         let tile = Tile.site(.link(to: url))
         let token = beginLaunch(tile)
         browser.openLink(url) { [weak self] err in self?.finishLaunch(token, error: err) }
+    }
+
+    /// Puts the page opened from a link back in front, if macOS moved another app over it.
+    private func showLinkWindow() {
+        guard inSession, let w = NSApp.windows.first(where: { ($0 as? WebWindow)?.isLink == true && $0.isVisible }) as? WebWindow,
+              NSApp.keyWindow !== w || !NSApp.isActive else { return }
+        NSApp.activate()
+        w.makeKeyAndOrderFront(nil)
+        webWindowShown(w)
     }
 
     /// Back from the first page of a link returns to where the link was clicked.
@@ -440,6 +373,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         query = ""
         selection = 0
         guardian.updateAllowed(Set(config.apps.map(\.bundleID)))
+        linkCatcher.start()
         guardian.start()
         registerHotKeys()
         updateKeyTap()
@@ -523,6 +457,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         registeredHotKeys = []
         keyTap.stop()
         guardian.stop()
+        linkCatcher.stop()
         browser.closeAll()
         tweaks.restoreIfNeeded()
         NSApp.presentationOptions = []
@@ -804,6 +739,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         }
         guard inSession else { return }
         guardian.sweep()
+        if config.openAppLinks && trusted { linkCatcher.refresh(skipping: guardian.checking) }
 
         homeBar?.reposition()
         if let screen = NSScreen.screens.first, sessionWindow?.frame != screen.frame {
