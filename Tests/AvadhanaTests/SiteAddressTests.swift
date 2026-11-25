@@ -77,10 +77,51 @@ final class SiteAddressTests: XCTestCase {
     }
 
     func testInvalidInputProducesNoTile() {
-        for input in ["", "   ", "localhost", "file:///definitely/not/here.html", "javascript:alert(1)"] {
+        for input in ["", "   ", "file:///definitely/not/here.html", "javascript:alert(1)", "intranet"] {
             var draft = SiteDraft(index: nil, site: nil)
             draft.url = input
             XCTAssertNil(draft.toTile(), input)
+        }
+    }
+
+    func testLocalAddressesUseHTTPAndTheirOwnHost() throws {
+        let cases: [(input: String, url: String, name: String)] = [
+            ("localhost", "http://localhost", "localhost"),
+            ("localhost:3000", "http://localhost:3000", "localhost:3000"),
+            ("localhost:8080/app", "http://localhost:8080/app", "localhost:8080"),
+            ("127.0.0.1", "http://127.0.0.1", "127.0.0.1"),
+            ("127.0.0.1:5173", "http://127.0.0.1:5173", "127.0.0.1:5173"),
+            ("192.168.1.20:8000", "http://192.168.1.20:8000", "192.168.1.20:8000"),
+            ("10.0.0.7", "http://10.0.0.7", "10.0.0.7"),
+            ("172.20.5.9:4000", "http://172.20.5.9:4000", "172.20.5.9:4000"),
+            ("https://localhost:8443", "https://localhost:8443", "localhost:8443"),
+        ]
+        for c in cases {
+            var draft = SiteDraft(index: nil, site: nil)
+            draft.url = c.input
+            let tile = try XCTUnwrap(draft.toTile(), c.input)
+            XCTAssertEqual(tile.url, c.url, c.input)
+            XCTAssertEqual(tile.name, c.name, c.input)
+            XCTAssertEqual(tile.allowedDomains, [URL(string: c.url)!.host!], c.input)
+        }
+    }
+
+    func testPublicAddressesStillUseHTTPS() throws {
+        var draft = SiteDraft(index: nil, site: nil)
+        draft.url = "192.168.example.com"
+        XCTAssertEqual(try XCTUnwrap(draft.toTile()).url, "https://192.168.example.com")
+        draft.url = "172.32.0.1"   // just outside the private 172.16–31 range
+        XCTAssertEqual(try XCTUnwrap(draft.toTile()).url, "https://172.32.0.1")
+    }
+
+    func testLocalHostRanges() {
+        for host in ["localhost", "app.localhost", "127.0.0.1", "127.255.0.9", "10.1.2.3",
+                     "172.16.0.1", "172.31.255.255", "192.168.0.1"] {
+            XCTAssertTrue(Links.isLocalHost(host), host)
+        }
+        for host in ["github.com", "example.localhost.com", "8.8.8.8", "172.15.0.1", "172.32.0.1",
+                     "192.169.0.1", "11.0.0.1", "192.168.1", "localhost.example.com"] {
+            XCTAssertFalse(Links.isLocalHost(host), host)
         }
     }
 }

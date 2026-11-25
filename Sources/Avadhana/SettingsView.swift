@@ -203,7 +203,7 @@ struct AppsSettings: View {
     }
 
     private func rescan() {
-        installed = InstalledApp.scan(including: c.config.apps, excluding: BrowserKind.allBundleIDs)
+        installed = InstalledApp.scan(including: c.config.apps)
     }
 
     private func binding(for app: InstalledApp) -> Binding<Bool> {
@@ -229,7 +229,6 @@ struct AppsSettings: View {
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             guard let id = Bundle(url: url)?.bundleIdentifier,
-                  !BrowserKind.allBundleIDs.contains(id),
                   !c.config.apps.contains(where: { $0.bundleID == id }) else { continue }
             var name = FileManager.default.displayName(atPath: url.path)
             if name.hasSuffix(".app") { name.removeLast(4) }
@@ -267,9 +266,12 @@ struct SiteDraft: Identifiable {
             let path = (t as NSString).expandingTildeInPath
             return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
         }
-        let candidate = (t.contains("://") || t.lowercased().hasPrefix("file:")) ? t : "https://" + t
+        // Local addresses (localhost:3000, 192.168.1.20) are usually plain http dev servers.
+        let typedHost = String(t.prefix { $0 != ":" && $0 != "/" })
+        let scheme = Links.isLocalHost(typedHost) ? "http://" : "https://"
+        let candidate = (t.contains("://") || t.lowercased().hasPrefix("file:")) ? t : scheme + t
         guard let u = SiteTile.openableURL(candidate) else { return nil }
-        if !u.isFileURL, u.host?.contains(".") != true { return nil }
+        if !u.isFileURL, u.host?.contains(".") != true, !Links.isLocalHost(u.host ?? "") { return nil }
         return u
     }
 
@@ -291,7 +293,9 @@ struct SiteDraft: Identifiable {
             .filter { !$0.isEmpty }
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let fallbackName: String
-        if let host {
+        if let host, Links.isLocalHost(host) {
+            fallbackName = u.port.map { "\(host):\($0)" } ?? host
+        } else if let host {
             fallbackName = host.split(separator: ".").first.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? host
         } else {
             fallbackName = u.deletingPathExtension().lastPathComponent

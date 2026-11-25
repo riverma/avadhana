@@ -52,6 +52,18 @@ enum Links {
         return labels.suffix(keep).joined(separator: ".")
     }
 
+    /// This Mac (localhost), or a private network address: 127.x, 10.x, 172.16–31.x, 192.168.x.
+    static func isLocalHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        if h == "localhost" || h.hasSuffix(".localhost") { return true }
+        let octets = h.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        switch (octets[0], octets[1]) {
+        case (127, _), (10, _), (192, 168), (172, 16...31): return true
+        default: return false
+        }
+    }
+
     static func host(_ host: String, isWithin domain: String) -> Bool {
         let host = host.lowercased(), domain = domain.lowercased()
         return host == domain || host.hasSuffix("." + domain)

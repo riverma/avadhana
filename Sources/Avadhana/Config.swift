@@ -103,7 +103,6 @@ enum BrowserKind: String, Codable, CaseIterable, Identifiable {
     var isInstalled: Bool { appURL != nil }
 
     static var installed: [BrowserKind] { allCases.filter(\.isInstalled) }
-    static var allBundleIDs: Set<String> { Set(allCases.map(\.bundleID)) }
 }
 
 struct Config: Codable, Equatable {
@@ -232,11 +231,11 @@ struct InstalledApp: Identifiable, Hashable {
 
     /// Scans the standard Applications folders. Apps already in the config but installed elsewhere
     /// are included too.
-    static func scan(including extra: [AppTile], excluding excluded: Set<String>) -> [InstalledApp] {
+    static func scan(including extra: [AppTile]) -> [InstalledApp] {
         let fm = FileManager.default
         let dirs = ["/Applications", "/Applications/Utilities", "/System/Applications",
                     "/System/Applications/Utilities", NSHomeDirectory() + "/Applications"]
-        var seen = excluded.union([Bundle.main.bundleIdentifier ?? ""])
+        var seen: Set<String> = [Bundle.main.bundleIdentifier ?? ""]
         var result: [InstalledApp] = []
 
         func add(_ url: URL) {

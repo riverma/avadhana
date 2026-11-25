@@ -4,6 +4,13 @@ All notable changes to Avadhāna are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-11-25
+
+### Fixed
+
+- Sites accept local addresses such as `localhost:3000`, `127.0.0.1` and `192.168.x.x`, opened over http (#2).
+- Browsers can be added to the apps list like any other app.
+
 ## [1.0.0] - 2026-11-17
 
 First public release.
@@ -25,4 +32,5 @@ First public release.
 - Project website in `docs/`.
 - Unit tests (`swift test`) for site addresses, allowed domains, link rules, settings, tile order, shortcuts and updates, run by GitHub Actions.
 
+[1.0.1]: https://github.com/riverma/avadhana/releases/tag/v1.0.1
 [1.0.0]: https://github.com/riverma/avadhana/releases/tag/v1.0.0
