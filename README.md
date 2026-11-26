@@ -126,7 +126,7 @@ See our [releases page](https://github.com/riverma/avadhana/releases) for our ke
 2. How do links from my apps open in Avadhāna?
    - The link still goes to your usual browser. While Avadhāna is on, it notices the new page as the browser comes forward, closes that tab, and opens the page in Avadhāna instead. It reads the page address with the Accessibility access it already has, never changes your default browser, and leaves your own tabs alone.
 3. Will it change my browser or my Mac's settings?
-   - Sites open in a separate browser profile, so your normal browser settings, bookmarks and history aren't touched. The Dock is hidden while Avadhāna is on; its original settings are saved first and restored when you exit, or on the next launch if the app quits unexpectedly.
+   - Sites open in a separate browser profile, so your normal browser settings, bookmarks and history aren't touched. The Dock and menu bar are hidden while Avadhāna is on; their original settings are saved first and restored when you exit, or on the next launch if the app quits unexpectedly.
 4. Is it on the Mac App Store?
    - No. App Store apps must be sandboxed, and the sandbox doesn't allow managing other apps' windows. Releases are signed with a Developer ID and notarized by Apple.
 5. What are the current limitations?

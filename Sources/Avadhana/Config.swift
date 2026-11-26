@@ -103,6 +103,10 @@ enum BrowserKind: String, Codable, CaseIterable, Identifiable {
     var isInstalled: Bool { appURL != nil }
 
     static var installed: [BrowserKind] { allCases.filter(\.isInstalled) }
+
+    static func from(bundleID: String) -> BrowserKind? {
+        allCases.first { $0.bundleID == bundleID }
+    }
 }
 
 struct Config: Codable, Equatable {
@@ -122,6 +126,38 @@ struct Config: Codable, Equatable {
     var openAppLinks: Bool
     /// Looks for a new release on GitHub. Shown only in Settings.
     var checkForUpdates: Bool
+    /// While Avadhāna is on, the menu bar is hidden (and restored afterward).
+    var hideMenuBarDuringSession: Bool
+    /// A browser you've added as an app opens without its address bar and tabs, at `browserStartPage`.
+    /// Off opens it as a normal app.
+    var hideBrowserChrome: Bool
+    /// Where a browser you've added opens when its address bar is hidden. Empty or invalid means DuckDuckGo.
+    var browserStartPage: String
+
+    static let defaultBrowserStartPage = "https://duckduckgo.com"
+
+    /// The start page as a URL. Anything that isn't a usable web address falls back to DuckDuckGo,
+    /// so a bad value can't stop a browser from opening.
+    var browserStartPageURL: URL {
+        let fallback = URL(string: Config.defaultBrowserStartPage)!
+        let typed = Config.normalizedAddress(browserStartPage)
+        guard !typed.isEmpty else { return fallback }
+        return SiteTile.openableURL(typed) ?? fallback
+    }
+
+    /// Adds https:// (or http:// for this Mac and private network addresses) to a bare address such as
+    /// `duckduckgo.com` or `localhost:3000`. Text that doesn't look like a web address is returned as typed,
+    /// so `SiteTile.openableURL` rejects it.
+    static func normalizedAddress(_ text: String) -> String {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, !t.contains("://") else { return t }
+        let host = String(t.prefix { $0 != ":" && $0 != "/" })
+        let scheme = Links.isLocalHost(host) ? "http://" : "https://"
+        let candidate = scheme + t
+        // A bare word such as "intranet" or "javascript:alert(1)" has no dot and isn't local; leave it unchanged.
+        guard let url = URL(string: candidate), let h = url.host, h.contains(".") || Links.isLocalHost(h) else { return t }
+        return candidate
+    }
 
     func shortcut(_ action: ShortcutAction) -> ShortcutSetting {
         shortcuts[action.rawValue] ?? action.defaultSetting
@@ -201,7 +237,8 @@ struct Config: Codable, Equatable {
     static var defaults: Config {
         Config(layout: .grid, hideDockDuringSession: true, browser: .safari,
                apps: [], sites: [], order: [], shortcuts: [:],
-               openLinks: true, openAppLinks: true, checkForUpdates: true)
+               openLinks: true, openAppLinks: true, checkForUpdates: true,
+               hideMenuBarDuringSession: true, hideBrowserChrome: true, browserStartPage: defaultBrowserStartPage)
     }
 }
 
@@ -219,6 +256,9 @@ extension Config {
         openLinks = try c.decodeIfPresent(Bool.self, forKey: .openLinks) ?? true
         openAppLinks = try c.decodeIfPresent(Bool.self, forKey: .openAppLinks) ?? true
         checkForUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkForUpdates) ?? true
+        hideMenuBarDuringSession = try c.decodeIfPresent(Bool.self, forKey: .hideMenuBarDuringSession) ?? true
+        hideBrowserChrome = try c.decodeIfPresent(Bool.self, forKey: .hideBrowserChrome) ?? true
+        browserStartPage = try c.decodeIfPresent(String.self, forKey: .browserStartPage) ?? Config.defaultBrowserStartPage
     }
 }
 

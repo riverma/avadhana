@@ -33,6 +33,7 @@ struct GeneralSettings: View {
             }
             Section("While Avadhāna is on") {
                 Toggle("Hide the Dock", isOn: $c.config.hideDockDuringSession)
+                Toggle("Hide the menu bar", isOn: $c.config.hideMenuBarDuringSession)
             }
             Section {
                 Picker("Open sites in", selection: browserBinding) {
@@ -50,6 +51,9 @@ struct GeneralSettings: View {
                 .pickerStyle(.inline)
                 Toggle("Open web links from my sites", isOn: $c.config.openLinks)
                 Toggle("Open web links from my apps", isOn: $c.config.openAppLinks)
+                Toggle("Hide address bar and tabs for browsers I've added", isOn: $c.config.hideBrowserChrome)
+                BrowserStartPageField()
+                    .disabled(!c.config.hideBrowserChrome)
             } header: {
                 Text("Web browser")
             }
@@ -70,6 +74,34 @@ struct GeneralSettings: View {
     /// Shows Safari when the saved browser has been uninstalled.
     private var browserBinding: Binding<BrowserKind> {
         Binding(get: { c.config.effectiveBrowser }, set: { c.config.browser = $0 })
+    }
+}
+
+/// Where a browser opens when its address bar is hidden. Cleaned up when the field loses focus.
+struct BrowserStartPageField: View {
+    @EnvironmentObject var c: AppController
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        LabeledContent("Browsers open to") {
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("", text: $text, prompt: Text(Config.defaultBrowserStartPage))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+                Text("Used when a browser you've added opens without an address bar.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear { text = c.config.browserStartPage }
+    }
+
+    private func commit() {
+        let cleaned = Config.normalizedAddress(text)
+        text = cleaned
+        if cleaned != c.config.browserStartPage { c.config.browserStartPage = cleaned }
     }
 }
 
@@ -171,29 +203,31 @@ struct AppsSettings: View {
 
             List(visible) { app in
                 let added = addedIDs.contains(app.bundleID)
-                Button {
-                    binding(for: app).wrappedValue.toggle()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: added ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 15))
-                            .foregroundStyle(added ? Theme.accent : .secondary)
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
-                            .resizable().frame(width: 24, height: 24)
-                        Text(app.name)
-                        Spacer()
-                        if added {
-                            Text("Added").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button {
+                        binding(for: app).wrappedValue.toggle()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: added ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 15))
+                                .foregroundStyle(added ? Theme.accent : .secondary)
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
+                                .resizable().frame(width: 24, height: 24)
+                            Text(app.name)
+                            Spacer()
+                            if added {
+                                Text("Added").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .listStyle(.bordered(alternatesRowBackgrounds: true))
 
             HStack {
-                Text("\(c.config.apps.count) added · Web browsers are set under General.")
+                Text("\(c.config.apps.count) added · The browser used for sites is set under General.")
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Add app from elsewhere…", action: addOther)
@@ -467,6 +501,8 @@ struct ShortcutsSettings: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        // Leaving this tab mid-recording would otherwise leave every shortcut switched off.
+        .onDisappear { c.endRecording() }
     }
 }
 

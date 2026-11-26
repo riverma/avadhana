@@ -87,4 +87,61 @@ final class ConfigTests: XCTestCase {
         let decoded = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(c))
         XCTAssertEqual(decoded, c)
     }
+
+    // MARK: Menu bar, browser start page and browser windows (issue #1)
+
+    func testMenuBarAndStartPageDefaults() throws {
+        let c = try JSONDecoder().decode(Config.self, from: Data("{}".utf8))
+        XCTAssertTrue(c.hideMenuBarDuringSession, "menu bar hidden by default")
+        XCTAssertEqual(c.browserStartPage, "https://duckduckgo.com")
+    }
+
+    func testMenuBarSettingRoundTripsWhenOff() throws {
+        var c = Config.defaults
+        c.hideMenuBarDuringSession = false
+        let decoded = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(c))
+        XCTAssertFalse(decoded.hideMenuBarDuringSession)
+    }
+
+    func testOldRestoreFileWithOnlyDockKeysStillDecodes() throws {
+        let snap = try JSONDecoder().decode(SystemTweaks.Snapshot.self, from: Data(#"{"dockAutohide": true, "dockAutohideDelay": 0.5}"#.utf8))
+        XCTAssertTrue(snap.dockAutohide)
+        XCTAssertEqual(snap.dockAutohideDelay, 0.5)
+        XCTAssertNil(snap.menuBarAutohideWasSet, "menu bar was never changed by an older version")
+    }
+
+    func testBrowserKindFromBundleID() {
+        XCTAssertEqual(BrowserKind.from(bundleID: "com.google.Chrome"), .chrome)
+        XCTAssertNil(BrowserKind.from(bundleID: "com.apple.TextEdit"))
+    }
+
+    func testBrowserChromeIsHiddenByDefaultAndCanBeTurnedOff() throws {
+        XCTAssertTrue(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).hideBrowserChrome)
+        let off = try JSONDecoder().decode(Config.self, from: Data(#"{"hideBrowserChrome": false}"#.utf8))
+        XCTAssertFalse(off.hideBrowserChrome)
+    }
+
+    func testBrowserStartPageURLUsesValidValue() {
+        var c = Config.defaults
+        c.browserStartPage = "https://example.com"
+        XCTAssertEqual(c.browserStartPageURL.absoluteString, "https://example.com")
+    }
+
+    func testBrowserStartPageURLFallsBackToDuckDuckGo() {
+        for bad in ["", "   ", "javascript:alert(1)", "not a url", "intranet"] {
+            var c = Config.defaults
+            c.browserStartPage = bad
+            XCTAssertEqual(c.browserStartPageURL.absoluteString, "https://duckduckgo.com", bad)
+        }
+    }
+
+    func testBareLocalAddressBecomesHTTP() {
+        var c = Config.defaults
+        c.browserStartPage = "localhost:3000"
+        XCTAssertEqual(c.browserStartPageURL.absoluteString, "http://localhost:3000")
+    }
+
+    func testBareDomainGetsHTTPS() {
+        XCTAssertEqual(Config.normalizedAddress("duckduckgo.com"), "https://duckduckgo.com")
+    }
 }

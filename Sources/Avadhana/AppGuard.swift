@@ -43,12 +43,18 @@ final class AppGuard {
         let isPreexisting = preexisting.contains(app.processIdentifier)
 
         if let browser = browserBundleID(), bid == browser {
-            if isFocusBrowser(app) { return .allowed }
-            return isPreexisting ? .hideOnly : .block
+            return Self.browserVerdict(isFocus: isFocusBrowser(app), allowed: allowedBundleIDs.contains(bid), isPreexisting: isPreexisting)
         }
         if allowedBundleIDs.contains(bid) || Self.systemAllowed.contains(bid) { return .allowed }
         if bid == "com.apple.finder" || isPreexisting { return .hideOnly }
         return .block
+    }
+
+    /// The chosen browser: its dedicated instance and any browser you've added as an app are allowed.
+    /// Your normal browser (not on the list) is hidden if it was open before, otherwise closed.
+    static func browserVerdict(isFocus: Bool, allowed: Bool, isPreexisting: Bool) -> Verdict {
+        if isFocus || allowed { return .allowed }
+        return isPreexisting ? .hideOnly : .block
     }
 
     func start() {

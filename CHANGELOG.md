@@ -4,6 +4,21 @@ All notable changes to Avadhāna are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-11-25
+
+### Added
+
+- A "Browsers open to" setting under General (DuckDuckGo by default), used when a browser you've added opens without an address bar. An empty or invalid address falls back to DuckDuckGo.
+- "Hide the menu bar" setting under General, on by default; the menu bar is restored when the session ends.
+- A "Hide address bar and tabs for browsers I've added" setting under General, on by default.
+
+### Fixed
+
+- Apps in full screen or on another desktop come forward and fill the screen when opened from Avadhāna (#1).
+- Browsers added to the apps list are no longer closed or hidden by Avadhāna (#1).
+- Back works in a browser added as an app when Safari is the chosen site browser.
+- Leaving the Shortcuts tab while recording a shortcut no longer leaves all shortcuts switched off.
+
 ## [1.0.1] - 2026-11-25
 
 ### Fixed
@@ -32,5 +47,6 @@ First public release.
 - Project website in `docs/`.
 - Unit tests (`swift test`) for site addresses, allowed domains, link rules, settings, tile order, shortcuts and updates, run by GitHub Actions.
 
+[1.0.2]: https://github.com/riverma/avadhana/releases/tag/v1.0.2
 [1.0.1]: https://github.com/riverma/avadhana/releases/tag/v1.0.1
 [1.0.0]: https://github.com/riverma/avadhana/releases/tag/v1.0.0

@@ -51,6 +51,8 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
     @Published var confirmingExit = false
 
     private(set) var browser: SiteBrowser!
+    /// Chromeless windows for added browsers that aren't the chosen site browser, made on demand.
+    private var otherBrowsers: [BrowserKind: SiteBrowser] = [:]
     let guardian = AppGuard()
     let windows = WindowManager(reservedBottom: HomeBar.height)
     let tweaks = SystemTweaks()
@@ -113,10 +115,11 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
             self.launching = nil
             self.currentAppName = app.localizedName ?? "App"
             self.guardian.hideOthers(except: app)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.windows.enforce(app) }
+            self.windows.enforceWithRetries(app)
         }
         guardian.catchLink = { [weak self] app, launched, done in
             guard let self, self.inSession, self.config.openAppLinks, self.axTrusted,
+                  !self.guardian.allowedBundleIDs.contains(app.bundleIdentifier ?? ""),   // a browser you added as an app
                   self.linkCatcher.isBrowser(app), !self.guardian.spotlightRecentlyUsed,
                   let opener = self.lastAllowedApp, !opener.isTerminated else { return false }
             // A link from the app you were using: move its page into Avadhāna.
@@ -179,7 +182,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        if inSession { NSApp.presentationOptions = [.hideDock, .hideMenuBar] }
+        if inSession { NSApp.presentationOptions = sessionPresentation }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -245,9 +248,21 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         guard inSession else { return }
         guardian.updateAllowed(Set(config.apps.map(\.bundleID)))
         if config.shortcuts != old.shortcuts { registerHotKeys(); updateKeyTap() }
-        if config.hideDockDuringSession != old.hideDockDuringSession {
-            if config.hideDockDuringSession { tweaks.hideDock() } else { tweaks.restoreIfNeeded() }
+        if config.hideDockDuringSession != old.hideDockDuringSession
+            || config.hideMenuBarDuringSession != old.hideMenuBarDuringSession {
+            // Restore first so the saved originals stay the true originals, then apply the new choice.
+            tweaks.restoreIfNeeded()
+            tweaks.apply(hideDock: config.hideDockDuringSession, hideMenuBar: config.hideMenuBarDuringSession)
+            NSApp.presentationOptions = sessionPresentation
         }
+    }
+
+    /// Hidden while Avadhāna is in front, following the same settings as the system changes.
+    private var sessionPresentation: NSApplication.PresentationOptions {
+        var options: NSApplication.PresentationOptions = []
+        if config.hideDockDuringSession { options.insert(.hideDock) }
+        if config.hideMenuBarDuringSession { options.insert(.hideMenuBar) }
+        return options
     }
 
     func reloadConfig() {
@@ -367,7 +382,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
                 return
             }
         }
-        if config.hideDockDuringSession { tweaks.hideDock() }
+        tweaks.apply(hideDock: config.hideDockDuringSession, hideMenuBar: config.hideMenuBarDuringSession)
 
         inSession = true
         query = ""
@@ -397,7 +412,7 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         lastAllowedApp = nil
         currentAppName = nil
         NSApp.activate()
-        NSApp.presentationOptions = [.hideDock, .hideMenuBar]
+        NSApp.presentationOptions = sessionPresentation
         sessionWindow?.makeKeyAndOrderFront(nil)
         focusSearch()
     }
@@ -413,8 +428,9 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
             }
             return
         }
-        if let front = NSWorkspace.shared.frontmostApplication, browser.isFocusProcess(front) {
-            browser.goBack(in: front)
+        if let front = NSWorkspace.shared.frontmostApplication,
+           let site = ([browser] + Array(otherBrowsers.values)).first(where: { $0?.isFocusProcess(front) == true }) {
+            site?.goBack(in: front)
         } else {
             goHome()
         }
@@ -459,6 +475,8 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
         guardian.stop()
         linkCatcher.stop()
         browser.closeAll()
+        otherBrowsers.values.forEach { $0.closeAll() }
+        otherBrowsers = [:]
         tweaks.restoreIfNeeded()
         NSApp.presentationOptions = []
         homeBar?.close(); homeBar = nil
@@ -480,10 +498,26 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
     func open(_ tile: Tile) {
         let token = beginLaunch(tile)
         switch tile {
-        case .app(let a): openApp(a)
+        case .app(let a):
+            if let kind = BrowserKind.from(bundleID: a.bundleID), config.hideBrowserChrome {
+                // A browser with its address bar hidden opens the start page, like a site.
+                let start = SiteTile(name: a.name, url: config.browserStartPageURL.absoluteString, allowedDomains: [])
+                chromelessBrowser(kind).open(start) { [weak self] err in self?.finishLaunch(token, error: err) }
+            } else {
+                openApp(a)
+            }
         case .site(let s):
             browser.open(s) { [weak self] err in self?.finishLaunch(token, error: err) }
         }
+    }
+
+    /// The site browser for `kind`: the chosen one, or a separate one for another added browser.
+    private func chromelessBrowser(_ kind: BrowserKind) -> SiteBrowser {
+        if browser.kind == kind { return browser }
+        if let existing = otherBrowsers[kind] { return existing }
+        let made = makeBrowser(kind)
+        otherBrowsers[kind] = made
+        return made
     }
 
     /// Shows a spinner until the app or site is in front (or gives up after 20 seconds).
@@ -509,9 +543,19 @@ final class AppController: NSObject, ObservableObject, NSApplicationDelegate, NS
             launching = nil
             showToast("\(tile.name) isn't installed"); return
         }
-        NSRunningApplication.runningApplications(withBundleIdentifier: tile.bundleID).forEach { $0.unhide() }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: tile.bundleID)
+        running.forEach { $0.unhide() }
+        // An app that's in full screen or on another desktop often ignores one request to come forward,
+        // so ask again shortly after if it still isn't active.
+        if let app = running.first(where: { !$0.isTerminated }) {
+            app.activate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                if !app.isTerminated && !app.isActive { app.activate() }
+            }
+        }
         let cfg = NSWorkspace.OpenConfiguration()
         cfg.activates = true
+        // Opening a running app asks it to show a window, which makes macOS switch to that window's desktop.
         NSWorkspace.shared.openApplication(at: url, configuration: cfg) { [weak self] _, error in
             if let error {
                 DispatchQueue.main.async {
